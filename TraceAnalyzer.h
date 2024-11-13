@@ -17,6 +17,9 @@ using namespace std;
 
 class TraceAnalyzer{
     private:
+        int args;
+        string traceFile;
+
         /* meta information, using same layout as trace file */
         struct meta_info
         {
@@ -41,11 +44,11 @@ class TraceAnalyzer{
             struct udphdr *udph;        /* ptr to UDP header, if present,
                                         otherwise NULL */
         };
-
-        string traceFile;
         unsigned short nextPacket(int fd, struct pkt_info *pinfo);
+        void infoParse(int fd);
+        void sizeParse(int fd);
+        
         void printError(string error);
-
     public:
         TraceAnalyzer(int argLine, string givenTraceFile); // basic constructor
         ~TraceAnalyzer() = default; // nothing special for destructor

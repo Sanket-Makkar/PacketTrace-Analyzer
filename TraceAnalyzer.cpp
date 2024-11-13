@@ -7,6 +7,7 @@
                     defined within the TraceAnalyzer.h header file.
 */
 #include "TraceAnalyzer.h"
+#include "ArgParser.h"
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -21,6 +22,11 @@
 #include <sys/stat.h>
 
 // Argument Flags
+#define ARG_TRACE_FILE 0x1
+#define ARG_TRACE_INFORMATION_MODE 0x2
+#define ARG_SIZE_ANALYSIS_MODE 0x4
+#define ARG_PACKET_PRINTING_MODE 0x8
+#define ARG_MATRIX_MODE 0x10
 
 // Helpful variables for initialization of counters, handling off-by-one errors, and comparisons
 #define COUNTER_INITIAL_VALUE 0
@@ -31,9 +37,7 @@
 #define WORD_TO_BYTE 4
 
 // Useful header constants
-#define ETH_HDR_LEN 14
-#define MIN_IP_HDR_LEN 20
-#define MIN_SIZE_UP_TO_IP (ETH_HDR_LEN + MIN_IP_HDR_LEN)
+#define MIN_SIZE_UP_TO_IP (sizeof(struct ether_header) + sizeof(struct iphdr))
 
 // exit options
 #define exitWithErr exit(FUNCTION_ERROR_RETURN_VALUE)
@@ -41,16 +45,94 @@
 
 using namespace std;
 
-TraceAnalyzer::TraceAnalyzer(int argLine, string givenTraceFile): traceFile(givenTraceFile) {}
+TraceAnalyzer::TraceAnalyzer(int argLine, string givenTraceFile): args(argLine), traceFile(givenTraceFile) {}
 
 void TraceAnalyzer::parsePackets(){
+    // now lets open the file
     int fd = open(traceFile.c_str(), 'r');
-    pkt_info info;
-    nextPacket(fd, &info);
-    printf("%f\n", info.now);
+    if (fd < 0){
+        printError("Failure to open tracefile, please provide and request a valid trace file.\n");
+    }
+
+    if (flagsContainBit(args, ARG_TRACE_INFORMATION_MODE))
+        infoParse(fd);
+    else if(flagsContainBit(args, ARG_SIZE_ANALYSIS_MODE))
+        sizeParse(fd);
+    
+    close(fd);
     exit(0);
 }
 
+void TraceAnalyzer::infoParse(int fd){
+    /* [tracefilename] [firsttime] [duration = lasttime - firsttime] [totalPackets] [IP_pkts] */
+    pkt_info info; // lets get a packet
+    double firstTime = -1;
+    double lastTime;
+    long unsigned int packetCounter = 0;
+    long unsigned int ipPackets = 0;
+    while (nextPacket(fd, &info) > 0){
+        // figure out the first time, as well as last time (for duration calculation) here.
+        if (firstTime == -1)
+            firstTime = info.now;
+        lastTime = info.now;
+
+        // count packets size
+        packetCounter++;
+        
+        // determine ip packets amount
+        if (info.iph != NULL){
+            ipPackets++;
+        }
+
+        memset(&info, 0, sizeof(struct pkt_info)); // once we have finished processing, reset info
+    }
+    printf("%s %f %f %lu %lu\n", traceFile.c_str(), firstTime, (lastTime - firstTime), packetCounter, ipPackets);
+}
+
+void TraceAnalyzer::sizeParse(int fd){
+    /* for each ipv4 packet:
+        [timestamp = now] [caplen] [ip total length] [length of ip header (iphl)] \
+            [Transport - T if TCP, U if UDP] [transhl = bytes in tcp/udp hdr] \ 
+            [payload len = lenpkt - caplen] 
+    */
+    pkt_info info;
+    while (nextPacket(fd, &info) > 0){
+        if (info.iph == NULL){
+            // not an ipv4 packet - lets ignore it for now then
+            continue;
+        }
+        // grab timestamp
+        double timeStamp = info.now;
+
+        // grab caplen
+        unsigned short caplen = info.caplen;
+
+        // grab total ip length
+        uint16_t totalIPLength = ntohs(info.iph->tot_len);
+
+        // length of ip header determined here
+        unsigned int iphLen = info.iph->ihl * WORD_TO_BYTE;
+
+        // transport type and length
+        char transportType = '?';
+        int intTransHL = -1;
+        string transHL = "?";
+        if (info.tcph != NULL){
+            transportType = 'T';
+            intTransHL = info.tcph->th_off * WORD_TO_BYTE;
+        }
+        else if (info.udph != NULL){
+            transportType = 'U';
+            intTransHL = info.udph->uh_ulen;
+        }
+        if (intTransHL != -1)
+            transHL = to_string(intTransHL);
+
+        int payloadLen = caplen - sizeof(struct ether_header) - iphLen - intTransHL;
+
+        printf("%f %hu %u %u %c %s %d\n", timeStamp, caplen, totalIPLength, iphLen, transportType, transHL.c_str(), payloadLen);
+    }
+}
 unsigned short TraceAnalyzer::nextPacket (int fd, struct pkt_info *pinfo)
 {
     struct meta_info meta;
@@ -95,8 +177,8 @@ unsigned short TraceAnalyzer::nextPacket (int fd, struct pkt_info *pinfo)
     if (pinfo->caplen == sizeof (struct ether_header))
         /* we don't have anything beyond the ethernet header to process */
         return (1);
-    /* TODO:
-       set pinfo->iph to start of IP header
+
+    /* set pinfo->iph to start of IP header
        if TCP packet, 
           set pinfo->tcph to the start of the TCP header
           setup values in pinfo->tcph, as needed
@@ -105,7 +187,7 @@ unsigned short TraceAnalyzer::nextPacket (int fd, struct pkt_info *pinfo)
           setup values in pinfo->udph, as needed */
     
     // set iph for pinfo and check that we can fit it
-    pinfo->iph = (struct iphdr *)(pinfo->pkt + ETH_HDR_LEN);
+    pinfo->iph = (struct iphdr *)(pinfo->pkt + sizeof(struct ether_header));
     if (pinfo->caplen < MIN_SIZE_UP_TO_IP)
         return(1);
     
