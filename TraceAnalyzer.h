@@ -47,7 +47,8 @@ class TraceAnalyzer{
         unsigned short nextPacket(int fd, struct pkt_info *pinfo);
         void infoParse(int fd);
         void sizeParse(int fd);
-        
+        void packetPrintingParse(int fd);
+
         void printError(string error);
     public:
         TraceAnalyzer(int argLine, string givenTraceFile); // basic constructor

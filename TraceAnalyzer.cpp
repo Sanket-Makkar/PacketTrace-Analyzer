@@ -38,6 +38,7 @@
 
 // Useful header constants
 #define MIN_SIZE_UP_TO_IP (sizeof(struct ether_header) + sizeof(struct iphdr))
+#define ETH_HEADER_LEN 14
 
 // exit options
 #define exitWithErr exit(FUNCTION_ERROR_RETURN_VALUE)
@@ -58,6 +59,8 @@ void TraceAnalyzer::parsePackets(){
         infoParse(fd);
     else if(flagsContainBit(args, ARG_SIZE_ANALYSIS_MODE))
         sizeParse(fd);
+    else if(flagsContainBit(args, ARG_PACKET_PRINTING_MODE))
+        packetPrintingParse(fd);
     
     close(fd);
     exit(0);
@@ -79,7 +82,7 @@ void TraceAnalyzer::infoParse(int fd){
         // count packets size
         packetCounter++;
         
-        // determine ip packets amount
+        // determine ip packets amount -- TODO: fix
         if (info.iph != NULL){
             ipPackets++;
         }
@@ -97,42 +100,74 @@ void TraceAnalyzer::sizeParse(int fd){
     */
     pkt_info info;
     while (nextPacket(fd, &info) > 0){
+        double timeStamp;
+        unsigned short caplen;
+        string totalIPLength = "-";
+        string iphLen = "-";
+        char transportType = '-';
+        string transHL = "-";
+        string payloadLen = "-";
         if (info.iph == NULL){
-            // not an ipv4 packet - lets ignore it for now then
+            // not an ipv4 packet - so no ipv4 header
             continue;
         }
+        else{
+            // grab total ip length
+            int intTotalIPLength = ntohs(info.iph->tot_len);
+            totalIPLength = to_string(intTotalIPLength);
+
+            // length of ip header determined here
+            unsigned int intIphLen = info.iph->ihl * WORD_TO_BYTE;
+            iphLen = to_string(intIphLen);
+
+            // transport type and length -- TODO: fix
+            transportType = '?';
+            transHL = "?";
+            unsigned int intTransHL = 0;
+            bool foundUDPorTCP = false;
+            if (info.tcph != NULL){
+                transportType = 'T';
+                intTransHL = info.tcph->th_off * 4;
+                foundUDPorTCP = true;
+            }
+            else if (info.udph != NULL){
+                transportType = 'U';
+                intTransHL = ntohl(info.udph->uh_ulen);
+                foundUDPorTCP = true;
+            }
+            
+            if (foundUDPorTCP == true){ // in the case we do have TCP or UDP
+                transHL = to_string(intTransHL);
+                uint intPayloadLen =  intTotalIPLength - intIphLen - intTransHL;
+                payloadLen = to_string(intPayloadLen);
+            }
+            else{
+                payloadLen = "?";
+            }
+        }
         // grab timestamp
-        double timeStamp = info.now;
+        timeStamp = info.now;
 
         // grab caplen
-        unsigned short caplen = info.caplen;
+        caplen = info.caplen;
 
-        // grab total ip length
-        uint16_t totalIPLength = ntohs(info.iph->tot_len);
-
-        // length of ip header determined here
-        unsigned int iphLen = info.iph->ihl * WORD_TO_BYTE;
-
-        // transport type and length
-        char transportType = '?';
-        int intTransHL = -1;
-        string transHL = "?";
-        if (info.tcph != NULL){
-            transportType = 'T';
-            intTransHL = info.tcph->th_off * WORD_TO_BYTE;
-        }
-        else if (info.udph != NULL){
-            transportType = 'U';
-            intTransHL = info.udph->uh_ulen;
-        }
-        if (intTransHL != -1)
-            transHL = to_string(intTransHL);
-
-        int payloadLen = caplen - sizeof(struct ether_header) - iphLen - intTransHL;
-
-        printf("%f %hu %u %u %c %s %d\n", timeStamp, caplen, totalIPLength, iphLen, transportType, transHL.c_str(), payloadLen);
+        printf("%f %u %s %s %c %s %s\n", timeStamp, caplen, totalIPLength.c_str(), iphLen.c_str(), transportType, transHL.c_str(), payloadLen.c_str());
+        memset(&info, 0, sizeof(struct pkt_info)); // once we have finished processing, reset info
     }
 }
+
+void TraceAnalyzer::packetPrintingParse(int fd){
+    /* [] */
+
+    pkt_info info;
+
+    while(nextPacket(fd, &info)){
+
+
+        memset(&info, 0, sizeof(struct pkt_info));
+    }
+}
+
 unsigned short TraceAnalyzer::nextPacket (int fd, struct pkt_info *pinfo)
 {
     struct meta_info meta;
@@ -169,6 +204,8 @@ unsigned short TraceAnalyzer::nextPacket (int fd, struct pkt_info *pinfo)
         printError("unexpected end of file encountered");
     if (bytes_read < sizeof (struct ether_header))
         return (1);
+    
+    /* grab ethernet header */
     pinfo->ethh = (struct ether_header *)pinfo->pkt;
     pinfo->ethh->ether_type = ntohs (pinfo->ethh->ether_type);
     if (pinfo->ethh->ether_type != ETHERTYPE_IP)
@@ -192,7 +229,7 @@ unsigned short TraceAnalyzer::nextPacket (int fd, struct pkt_info *pinfo)
         return(1);
     
     if (pinfo->iph->protocol == IPPROTO_TCP){
-        pinfo->tcph = (struct tcphdr *)(pinfo->pkt + (pinfo->iph->ihl * WORD_TO_BYTE));
+        pinfo->tcph = (struct tcphdr *)(pinfo->pkt + sizeof(struct ether_header) + (pinfo->iph->ihl * WORD_TO_BYTE));
         // may need to look here for sp dp
     }
     else if(pinfo->iph->protocol == IPPROTO_UDP){
