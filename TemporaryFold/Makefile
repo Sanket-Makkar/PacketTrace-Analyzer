@@ -8,7 +8,7 @@ TARGETS = proj4
 
 all: $(TARGETS)
 
-$(TARGETS): proj4.o ArgParser.o TraceAnalyzer.o	
+$(TARGETS): next.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 
 %.o: %.cc

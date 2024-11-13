@@ -10,6 +10,7 @@
 #include "ArgParser.h"
 #include <string>
 #include <string.h>
+#include "TraceAnalyzer.h"
 
 using namespace std;
 
@@ -22,8 +23,7 @@ void saveTraceFileLocation(string fileLocation){
 int main(int argc, char *argv[]){
     // execute parse args, passing in a callback that will grab file name, and returning/storing the args flag indicator
     int argLine = parseArgs(argc, argv, saveTraceFileLocation);
-
-    printf("argline = %x\nfileLocation = %s\n", argLine, traceFileLocation.c_str());
-
+    TraceAnalyzer analyzer = TraceAnalyzer(argLine, traceFileLocation);
+    analyzer.parsePackets();
     return 0;
 }
