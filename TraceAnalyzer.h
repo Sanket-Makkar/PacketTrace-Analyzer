@@ -1,9 +1,9 @@
 /*  Name: Sanket Makkar
     CaseID:         sxm1626
     File Name:      TraceAnalyzer.h
-    Date Created:   10/19/2024
+    Date Created:   11/5/2024
     Description:    The purpose of this file is to define a header for the core functionality
-                    as required by this assignment for the web-server.
+                    as required by this assignment for the Trace Analyzer.
 */
 #ifndef TRACE_ANALYZER_H
 #define TRACE_ANALYZER_H
@@ -45,6 +45,7 @@ class TraceAnalyzer{
                                         otherwise NULL */
         };
 
+        /* Useful struct for the matrix mode*/
         struct ipTraceInfo{
             unsigned int srcIp;
             unsigned int destIp;
@@ -52,19 +53,22 @@ class TraceAnalyzer{
             unsigned int trafficVolume;
         };
 
-        unsigned short nextPacket(int fd, struct pkt_info *pinfo);
-        void infoParse(int fd);
-        void sizeParse(int fd);
-        void tcpPacketPrintingParse(int fd);
-        void matrixParse(int fd);
+        // core logic
+        unsigned short nextPacket(int fd, struct pkt_info *pinfo); // get a packet
+        void infoParse(int fd); // -i
+        void sizeParse(int fd); // -s
+        void tcpPacketPrintingParse(int fd); // -t
+        void matrixParse(int fd); // -m
 
-        unsigned int hashFunction(unsigned int src, unsigned int dst);
-        string findQuads(unsigned int ip);
-        void printError(string error);
+        // helpers
+        unsigned int hashFunction(unsigned int src, unsigned int dst); // hash two numbers for a unique number
+        string findQuads(unsigned int ip); // number --> ipv4 addr with dotted quads
+        void printError(string error); // inform the user of an error
     public:
         TraceAnalyzer(int argLine, string givenTraceFile); // basic constructor
         ~TraceAnalyzer() = default; // nothing special for destructor
 
+        // what the user calls to parse their packets after initialization (which is effectively the setup step)
         void parsePackets();
 };
 

@@ -1,11 +1,11 @@
 /*  Name: Sanket Makkar
     CaseID:         sxm1626
     File Name:      ArgParser.cpp
-    Date Created:   10/17/2024
+    Date Created:   10/31/2024
     Description:    This file contains implementations for functions described within ArgParser.h.
-                    In general, this class is intended to provide a set of methods helpful to any
-                    other file that may want to parse, or perform some parsing-related action, on
-                    user input.
+                    The basic intention is to handle arguments from the user, inform them of appropriate
+                    errors, parse the input for validity, extract any input from the user, and then
+                    inform other classes that call from this file of this data and of the user input.
 */
 
 #include "ArgParser.h"  
@@ -39,7 +39,7 @@ using namespace std;
 string foundTraceFileLocation;
 unsigned int cmdLineFlags = 0x00000;
 
-// We take an input of argc, argv from the caller - arguments and number of arguments, as well as two callbacks to execute at the end of the function call
+// We take an input of argc, argv from the caller - arguments and number of arguments, as well as one callback to execute at the end of the function call
 int parseArgs(int argc, char *argv[], void (*grabTraceFileLocation)(string fileLocation)){
     int opt;
     while ((opt = getopt(argc, argv, "ismtr:")) != -1){
@@ -74,19 +74,23 @@ int parseArgs(int argc, char *argv[], void (*grabTraceFileLocation)(string fileL
         }
     }
 
+    // force the flags to have a trace file included
     if (!flagsContainBit(cmdLineFlags, ARG_TRACE_FILE)){
         fprintf(stderr, "Error: provide trace file\n");
         exitWithErr;
     }
     
+    // require one and exactly one of the optional -i, -s, -t, -m flags
     vector<int> requireOneFlag = {ARG_MATRIX_MODE, ARG_SIZE_ANALYSIS_MODE, ARG_PACKET_PRINTING_MODE, ARG_TRACE_INFORMATION_MODE};
     if (!checkOnlyHasOneFlag(cmdLineFlags, requireOneFlag)){
         fprintf(stderr, "Error: provide precisely one argument, not multiple, and at least one\n");
         exitWithErr;
     }
 
+    // call the callback
     grabTraceFileLocation(foundTraceFileLocation);
 
+    // return the flags
     return cmdLineFlags;
 }
 
