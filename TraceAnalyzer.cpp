@@ -203,8 +203,27 @@ void TraceAnalyzer::tcpPacketPrintingParse(int fd){
 
         string ts = to_string(info.now);
         
-        string sourceIp = findQuads(info.iph->saddr);
-        printf("%s\n", sourceIp.c_str());
+        string sourceIp = findQuads(ntohl(info.iph->saddr));
+        
+        string sourcePort = to_string(ntohs(info.tcph->th_sport));
+
+        string destIp = findQuads(ntohl(info.iph->daddr));
+
+        string destPort = to_string(ntohs(info.tcph->th_dport));
+
+        string ipttl = to_string(info.iph->ttl);
+
+        string ipid = to_string(ntohs(info.iph->id));
+
+        int synbit = ntohs(info.tcph->syn);
+        string syn = synbit < 1? "N" : "Y";
+
+        string window = to_string(ntohs(info.tcph->window));
+
+        string seqno = to_string(ntohl(info.tcph->seq));
+
+        printf("%s %s %s %s %s %s %s %s %s %s\n", ts.c_str(), sourceIp.c_str(), sourcePort.c_str(), destIp.c_str(), destPort.c_str(), ipttl.c_str(), ipid.c_str(), syn.c_str(), window.c_str(), seqno.c_str());
+
         memset(&info, 0, sizeof(struct pkt_info));
     }
 }
