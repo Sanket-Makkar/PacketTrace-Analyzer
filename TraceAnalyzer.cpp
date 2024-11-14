@@ -9,6 +9,7 @@
 #include "TraceAnalyzer.h"
 #include "ArgParser.h"
 #include <deque>
+#include <unordered_map>
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -69,6 +70,8 @@ void TraceAnalyzer::parsePackets(){
         sizeParse(fd);
     else if(flagsContainBit(args, ARG_PACKET_PRINTING_MODE))
         tcpPacketPrintingParse(fd);
+    else if(flagsContainBit(args, ARG_MATRIX_MODE))
+        matrixParse(fd);
     
     close(fd);
     exit(0);
@@ -226,6 +229,46 @@ void TraceAnalyzer::tcpPacketPrintingParse(int fd){
 
         memset(&info, 0, sizeof(struct pkt_info));
     }
+}
+
+void TraceAnalyzer::matrixParse(int fd){
+    /* [src ip] [dst ip] [total_pkts] [traffic volume] */
+    unordered_map<uint, ipTraceInfo> tracer; // a hashmap (ordering is expensive, we avoid it)
+
+    struct pkt_info info;
+    while(nextPacket(fd, &info) > 0){
+        if (info.iph == NULL || info.iph->protocol != IPPROTO_TCP || info.tcph == NULL){ // only iterate for tcp packets (and if no tcp header skip as well)
+            continue;
+        }
+        
+        unsigned int sourceIp = ntohl(info.iph->saddr);
+        unsigned int destIp = ntohl(info.iph->daddr);
+
+        unsigned int hashResult = hashFunction(sourceIp, destIp);
+        
+        tracer[hashResult].srcIp = sourceIp;
+        tracer[hashResult].destIp = destIp;
+        tracer[hashResult].totalPackets += 1;
+
+        unsigned int intPayloadLen = ntohs(info.iph->tot_len) - (info.iph->ihl * WORD_TO_BYTE) - (info.tcph->th_off * 4);
+
+        tracer[hashResult].trafficVolume += (intPayloadLen);
+        memset(&info, 0, sizeof(struct pkt_info));
+    }
+
+    for (auto it = tracer.begin(); it != tracer.end(); it++){
+        ipTraceInfo traceInfo = it->second;
+        string src = findQuads(traceInfo.srcIp);
+        string dst = findQuads(traceInfo.destIp);
+        string pkts = to_string(traceInfo.totalPackets);
+        string traffic = to_string(traceInfo.trafficVolume);
+        printf("%s %s %s %s\n", src.c_str(), dst.c_str(), pkts.c_str(), traffic.c_str());
+    }
+}
+
+unsigned int TraceAnalyzer::hashFunction(unsigned int src, unsigned int dst){
+    // (uint)(((src * src * src) + ((OFFSET + OFFSET + OFFSET)*src) + ((OFFSET + OFFSET) * src * dst) + dst + (dst * dst))*(OFFSET/(OFFSET + OFFSET)))
+    return src ^ (dst << 1);
 }
 
 string TraceAnalyzer::findQuads(unsigned int ip){

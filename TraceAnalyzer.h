@@ -44,11 +44,21 @@ class TraceAnalyzer{
             struct udphdr *udph;        /* ptr to UDP header, if present,
                                         otherwise NULL */
         };
+
+        struct ipTraceInfo{
+            unsigned int srcIp;
+            unsigned int destIp;
+            unsigned int totalPackets;
+            unsigned int trafficVolume;
+        };
+
         unsigned short nextPacket(int fd, struct pkt_info *pinfo);
         void infoParse(int fd);
         void sizeParse(int fd);
         void tcpPacketPrintingParse(int fd);
+        void matrixParse(int fd);
 
+        unsigned int hashFunction(unsigned int src, unsigned int dst);
         string findQuads(unsigned int ip);
         void printError(string error);
     public:
