@@ -1,0 +1,16 @@
+Name: Sanket Makkar
+CaseID:         sxm1626
+File Name:      notes.txt
+Date Created:   11/13/2024
+Description:    This is a file to contains notes regarding the CSDS325 proj4 assignment
+
+To make the files just type "make".
+To clean the object files type "make clean".
+To clean the directory type "make distclean"
+To clean, then make type "make remake"
+
+General Description:
+The project is composed of a few key files:
+- ArgParser.cpp & ArgParser.h: These are similar to the previous assignments ArgParser.cpp and ArgParser.h, however I have made a some changes to enable parsing of the particular data needed by this assignment.
+- TraceAnalyzer.cpp & TraceAnalyzer.h: These orchestrate the core functionality in this assignment including switching to handle arguments, parsing through the trace file, populating required fields, and taking appropriate measurements. The real core logic is housed here. Note - this is also what prints output.
+- proj4.cpp : This is really the glue between ArgParser and TraceAnalyzer - it allows arg parser to extract info and handle user input, and then routes that information to a TraceAnalyzer object and then executes a generic function in trace that starts the analysis.

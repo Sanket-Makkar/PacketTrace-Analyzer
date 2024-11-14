@@ -244,7 +244,12 @@ void TraceAnalyzer::tcpPacketPrintingParse(int fd){
 
 void TraceAnalyzer::matrixParse(int fd){
     /* [src ip] [dst ip] [total_pkts] [traffic volume] */
-    unordered_map<uint, ipTraceInfo> tracer; // a hashmap (ordering is expensive, we avoid it)
+    auto hashFunction = [](const pair<unsigned int, unsigned int> & srcDstIp) -> size_t{
+        // it is very unlikely that some number xor'ed with another number shifted left (2x'ed) will not be unique to that pair
+        // the left-shift kind of ensures that the pairs don't conflict (since 'a xor b = b xor a' but '2a xor b != 2b xor a')
+        return srcDstIp.first ^ (srcDstIp.second << OFF_BY_ONE_OFFSET);
+    };
+        unordered_map<pair<unsigned int, unsigned int>, ipTraceInfo, decltype(hashFunction)> tracer(COUNTER_INITIAL_VALUE, hashFunction); // a hashmap (ordering is expensive, we avoid it)
 
     /*  The idea here is to iterate through all packets, and to:
             * Stop if the packet does is not tcp, or does not have tcp header
@@ -262,16 +267,14 @@ void TraceAnalyzer::matrixParse(int fd){
 
         unsigned int sourceIp = ntohl(info.iph->saddr);
         unsigned int destIp = ntohl(info.iph->daddr);
-
-        unsigned int hashResult = hashFunction(sourceIp, destIp);
         
-        tracer[hashResult].srcIp = sourceIp;
-        tracer[hashResult].destIp = destIp;
-        tracer[hashResult].totalPackets += OFFSET;
+        tracer[{sourceIp, destIp}].srcIp = sourceIp;
+        tracer[{sourceIp, destIp}].destIp = destIp;
+        tracer[{sourceIp, destIp}].totalPackets += OFFSET;
 
         unsigned int intPayloadLen = ntohs(info.iph->tot_len) - (info.iph->ihl * WORD_TO_BYTE) - (info.tcph->th_off * WORD_TO_BYTE);
 
-        tracer[hashResult].trafficVolume += (intPayloadLen);
+        tracer[{sourceIp, destIp}].trafficVolume += (intPayloadLen);
         memset(&info, COUNTER_INITIAL_VALUE, sizeof(struct pkt_info));
     }
 
@@ -284,12 +287,6 @@ void TraceAnalyzer::matrixParse(int fd){
         string traffic = to_string(traceInfo.trafficVolume);
         printf("%s %s %s %s\n", src.c_str(), dst.c_str(), pkts.c_str(), traffic.c_str());
     }
-}
-
-unsigned int TraceAnalyzer::hashFunction(unsigned int src, unsigned int dst){
-    // it is very unlikely that some number xor'ed with another number shifted left (2x'ed) will not be unique to that pair
-    // the left-shift kind of ensures that the pairs don't conflict (since 'a xor b = b xor a' but '2a xor b != 2b xor a')
-    return src ^ (dst << OFF_BY_ONE_OFFSET);
 }
 
 string TraceAnalyzer::findQuads(unsigned int ip){

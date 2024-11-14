@@ -61,7 +61,6 @@ class TraceAnalyzer{
         void matrixParse(int fd); // -m
 
         // helpers
-        unsigned int hashFunction(unsigned int src, unsigned int dst); // hash two numbers for a unique number
         string findQuads(unsigned int ip); // number --> ipv4 addr with dotted quads
         void printError(string error); // inform the user of an error
     public:
