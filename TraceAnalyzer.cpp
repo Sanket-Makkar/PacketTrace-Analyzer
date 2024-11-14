@@ -8,6 +8,7 @@
 */
 #include "TraceAnalyzer.h"
 #include "ArgParser.h"
+#include <deque>
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -42,6 +43,11 @@
 #define ETH_HEADER_LEN 14
 #define UDP_HDR_LEN 8
 
+// Byte manipulation constants
+#define BYTE 8
+#define OFFSET 1
+#define GRAB_BYTE 0xFF
+
 // exit options
 #define exitWithErr exit(FUNCTION_ERROR_RETURN_VALUE)
 #define exitWithNoErr exit(COUNTER_INITIAL_VALUE)
@@ -62,7 +68,7 @@ void TraceAnalyzer::parsePackets(){
     else if(flagsContainBit(args, ARG_SIZE_ANALYSIS_MODE))
         sizeParse(fd);
     else if(flagsContainBit(args, ARG_PACKET_PRINTING_MODE))
-        packetPrintingParse(fd);
+        tcpPacketPrintingParse(fd);
     
     close(fd);
     exit(0);
@@ -71,26 +77,29 @@ void TraceAnalyzer::parsePackets(){
 void TraceAnalyzer::infoParse(int fd){
     /* [tracefilename] [firsttime] [duration = lasttime - firsttime] [totalPackets] [IP_pkts] */
     pkt_info info; // lets get a packet
-    double firstTime = -1;
+    deque<double> * times = new deque<double>();
+    double firstTime;
     double lastTime;
     long unsigned int packetCounter = 0;
     long unsigned int ipPackets = 0;
     while (nextPacket(fd, &info) > 0){
         // figure out the first time, as well as last time (for duration calculation) here.
-        if (firstTime == -1)
-            firstTime = info.now;
-        lastTime = info.now;
+        times->push_back(info.now);
 
         // count packets size
         packetCounter++;
         
-        // determine ip packets amount -- TODO: fix
-        if (info.iph != NULL){
-            ipPackets++;
+        // determine ip packets amount
+        if (info.ethh != NULL){
+            if(info.ethh->ether_type == ETHERTYPE_IP){
+                ipPackets++;
+            }
         }
 
         memset(&info, 0, sizeof(struct pkt_info)); // once we have finished processing, reset info
     }
+    firstTime = times->front();
+    lastTime = times->back();
     printf("%s %f %f %lu %lu\n", traceFile.c_str(), firstTime, (lastTime - firstTime), packetCounter, ipPackets);
 }
 
@@ -172,16 +181,42 @@ void TraceAnalyzer::sizeParse(int fd){
     }
 }
 
-void TraceAnalyzer::packetPrintingParse(int fd){
-    /* [] */
+void TraceAnalyzer::tcpPacketPrintingParse(int fd){
+    /*  iff tcp packet header and is tcp packet
+        [timestamp  - just use now]
+        [src ip     - iph]
+        [src port   - tcph]
+        [dest ip    - iph]
+        [dest port  - tcph]
+        [ipttl      - iph]
+        [ip id      - iph]
+        [syn        - tcph]
+        [window     - tcph]
+        [seqno      - tcph]
+     */
 
     pkt_info info;
 
     while(nextPacket(fd, &info)){
+        if (info.iph->protocol != IPPROTO_TCP || info.tcph == NULL) // only iterate for tcp packets (and if no tcp header skip as well)
+            continue;
 
-
+        string ts = to_string(info.now);
+        
+        string sourceIp = findQuads(info.iph->saddr);
+        printf("%s\n", sourceIp.c_str());
         memset(&info, 0, sizeof(struct pkt_info));
     }
+}
+
+string TraceAnalyzer::findQuads(unsigned int ip){
+    uint firstByte = (ip >> (BYTE * (OFFSET + OFFSET + OFFSET))) & GRAB_BYTE;
+    uint secondByte = (ip >> (BYTE * (OFFSET + OFFSET))) & GRAB_BYTE;
+    uint thirdByte = (ip >> (BYTE * (OFFSET))) & GRAB_BYTE;
+    uint fourthByte = ip & GRAB_BYTE;
+
+    string dottedQuads = to_string(firstByte) + "." + to_string(secondByte) + "." + to_string(thirdByte) + "." + to_string(fourthByte);
+    return dottedQuads;
 }
 
 unsigned short TraceAnalyzer::nextPacket (int fd, struct pkt_info *pinfo)
