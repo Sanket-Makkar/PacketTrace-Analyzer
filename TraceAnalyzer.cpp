@@ -37,8 +37,10 @@
 #define WORD_TO_BYTE 4
 
 // Useful header constants
-#define MIN_SIZE_UP_TO_IP (sizeof(struct ether_header) + sizeof(struct iphdr))
+#define MIN_IP_HDR_SIZE 20
+#define MIN_SIZE_UP_TO_IP (sizeof(struct ether_header) + MIN_IP_HDR_SIZE)
 #define ETH_HEADER_LEN 14
+#define UDP_HDR_LEN 8
 
 // exit options
 #define exitWithErr exit(FUNCTION_ERROR_RETURN_VALUE)
@@ -50,7 +52,7 @@ TraceAnalyzer::TraceAnalyzer(int argLine, string givenTraceFile): args(argLine),
 
 void TraceAnalyzer::parsePackets(){
     // now lets open the file
-    int fd = open(traceFile.c_str(), 'r');
+    int fd = open(traceFile.c_str(), O_RDONLY);
     if (fd < 0){
         printError("Failure to open tracefile, please provide and request a valid trace file.\n");
     }
@@ -99,7 +101,13 @@ void TraceAnalyzer::sizeParse(int fd){
             [payload len = lenpkt - caplen] 
     */
     pkt_info info;
+    memset(&info, 0, sizeof(struct pkt_info)); // once we have finished processing, reset info
     while (nextPacket(fd, &info) > 0){
+        if (info.ethh == NULL || info.ethh->ether_type != ETHERTYPE_IP){ // if no ethernet header or not IPv4 stop
+            continue;
+        }
+
+        // otherwise lets set everything other than timestamp and caplen to '-'
         double timeStamp;
         unsigned short caplen;
         string totalIPLength = "-";
@@ -107,44 +115,52 @@ void TraceAnalyzer::sizeParse(int fd){
         char transportType = '-';
         string transHL = "-";
         string payloadLen = "-";
-        if (info.iph == NULL){
-            // not an ipv4 packet - so no ipv4 header
-            continue;
-        }
-        else{
-            // grab total ip length
+        if (info.iph != NULL) { // Process only if there's an IP header
+            // Total IP length
             int intTotalIPLength = ntohs(info.iph->tot_len);
             totalIPLength = to_string(intTotalIPLength);
 
-            // length of ip header determined here
+            // IP header length
             unsigned int intIphLen = info.iph->ihl * WORD_TO_BYTE;
             iphLen = to_string(intIphLen);
 
-            // transport type and length -- TODO: fix
-            transportType = '?';
-            transHL = "?";
+            // we should know if the transport header is present
+            bool transportHeaderPresent = !(info.udph == NULL && info.tcph == NULL);
+            // Set transport type and header length
             unsigned int intTransHL = 0;
-            bool foundUDPorTCP = false;
-            if (info.tcph != NULL){
+            if (info.iph->protocol == IPPROTO_TCP) { // TCP case
                 transportType = 'T';
-                intTransHL = info.tcph->th_off * 4;
-                foundUDPorTCP = true;
+                if (info.tcph != NULL){
+                    intTransHL = info.tcph->th_off * 4; // TCP header length in bytes
+                    transHL = to_string(intTransHL);
+                }
             }
-            else if (info.udph != NULL){
+            else if (info.iph->protocol == IPPROTO_UDP) { // UDP case
                 transportType = 'U';
-                intTransHL = ntohl(info.udph->uh_ulen);
-                foundUDPorTCP = true;
+                if (info.udph != NULL){
+                    intTransHL = UDP_HDR_LEN; // UDP header length is constant
+                    transHL = to_string(intTransHL);
+                }
+            } 
+            else {
+                transportType = '?';
+                if (transportHeaderPresent){
+                    transHL = "-";
+                    payloadLen = "-";
+                }
+                else{
+                    transHL = "?";
+                    payloadLen = "?";
+                }
             }
-            
-            if (foundUDPorTCP == true){ // in the case we do have TCP or UDP
-                transHL = to_string(intTransHL);
-                uint intPayloadLen =  intTotalIPLength - intIphLen - intTransHL;
+
+            // Calculate payload length if TCP or UDP is present
+            if ((transportType == 'T' || transportType == 'U') && transportHeaderPresent) {
+                uint intPayloadLen = intTotalIPLength - intIphLen - intTransHL;
                 payloadLen = to_string(intPayloadLen);
             }
-            else{
-                payloadLen = "?";
-            }
         }
+
         // grab timestamp
         timeStamp = info.now;
 
@@ -214,30 +230,19 @@ unsigned short TraceAnalyzer::nextPacket (int fd, struct pkt_info *pinfo)
     if (pinfo->caplen == sizeof (struct ether_header))
         /* we don't have anything beyond the ethernet header to process */
         return (1);
-
-    /* set pinfo->iph to start of IP header
-       if TCP packet, 
-          set pinfo->tcph to the start of the TCP header
-          setup values in pinfo->tcph, as needed
-       if UDP packet, 
-          set pinfo->udph to the start of the UDP header,
-          setup values in pinfo->udph, as needed */
-    
-    // set iph for pinfo and check that we can fit it
+        
     pinfo->iph = (struct iphdr *)(pinfo->pkt + sizeof(struct ether_header));
-    if (pinfo->caplen < MIN_SIZE_UP_TO_IP)
-        return(1);
+    if (pinfo->caplen == sizeof(struct ether_header) + (pinfo->iph->ihl * WORD_TO_BYTE)){
+        return(1); 
+    }
     
+    unsigned int tcpOrUdpOffset = sizeof(struct ether_header) + (pinfo->iph->ihl * WORD_TO_BYTE);
     if (pinfo->iph->protocol == IPPROTO_TCP){
-        pinfo->tcph = (struct tcphdr *)(pinfo->pkt + sizeof(struct ether_header) + (pinfo->iph->ihl * WORD_TO_BYTE));
-        // may need to look here for sp dp
+        pinfo->tcph = (struct tcphdr *)(pinfo->pkt + tcpOrUdpOffset);
     }
     else if(pinfo->iph->protocol == IPPROTO_UDP){
-        pinfo->udph = (struct udphdr *)(pinfo->pkt + (pinfo->iph->ihl * WORD_TO_BYTE));
-        // again, sp dp might be needed in the future
+        pinfo->udph = (struct udphdr *)(pinfo->pkt + tcpOrUdpOffset);
     }
-
-    // maybe check size as well
 
     return (1);
 }
